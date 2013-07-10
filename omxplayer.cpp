@@ -54,6 +54,7 @@ extern "C" {
 #include "OMXPlayerVideo.h"
 #include "OMXPlayerAudio.h"
 #include "OMXPlayerSubtitles.h"
+#include "OMXControl.h"
 #include "DllOMX.h"
 #include "Srt.h"
 
@@ -106,22 +107,9 @@ bool              m_has_subtitle        = false;
 float             m_display_aspect      = 0.0f;
 bool              m_boost_on_downmix    = false;
 bool              m_gen_log             = false;
+OMXControl        m_omxcontrol;
 
 enum{ERROR=-1,SUCCESS,ONEBYTE};
-
-static struct termios orig_termios;
-static int orig_fl;
-static void restore_term()
-{
-  if (isatty(STDIN_FILENO))
-  {
-    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
-  }
-  else
-  {
-    fcntl(STDIN_FILENO, F_SETFL, orig_fl);
-  }
-}
 
 void sig_handler(int s)
 {
@@ -134,7 +122,7 @@ void sig_handler(int s)
   signal(SIGABRT, SIG_DFL);
   signal(SIGSEGV, SIG_DFL);
   signal(SIGFPE, SIG_DFL);
-  restore_term();
+  m_omxcontrol.restore_term();
   abort();
 }
 
@@ -512,26 +500,6 @@ int main(int argc, char *argv[])
   signal(SIGABRT, sig_handler);
   signal(SIGFPE, sig_handler);
   signal(SIGINT, sig_handler);
-
-  if (isatty(STDIN_FILENO))
-  {
-    struct termios new_termios;
-
-    tcgetattr(STDIN_FILENO, &orig_termios);
-
-    new_termios             = orig_termios;
-    new_termios.c_lflag     &= ~(ICANON | ECHO | ECHOCTL | ECHONL);
-    new_termios.c_cflag     |= HUPCL;
-    new_termios.c_cc[VMIN]  = 0;
-
-    tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
-  }
-  else
-  {
-    orig_fl = fcntl(STDIN_FILENO, F_GETFL);
-    fcntl(STDIN_FILENO, F_SETFL, orig_fl | O_NONBLOCK);
-  }
-  atexit(restore_term);
 
   bool                  m_send_eos            = false;
   bool                  m_packet_after_seek   = false;
@@ -949,25 +917,17 @@ int main(int argc, char *argv[])
 
   while(!m_stop)
   {
-    int ch[8];
-    int chnum = 0;
-
     if(g_abort)
       goto do_exit;
-    if (IsPipe(m_filename))
-      ch[0] = EOF;
-    else
-      while((ch[chnum] = getchar()) != EOF) chnum++;
 
-    if (chnum > 1) ch[0] = ch[chnum - 1] | (ch[chnum - 2] << 8);
-
-    switch(ch[0])
+     if (!IsPipe(m_filename)) {
+    switch(m_omxcontrol.getEvent())
     {
-      case 'z':
+      case SHOW_INFO:
         m_tv_show_info = !m_tv_show_info;
         vc_tv_show_info(m_tv_show_info);
         break;
-      case '1':
+      case SPEED_DOWN:
         if (playspeed_current < playspeed_slow_min || playspeed_current > playspeed_slow_max)
           playspeed_current = playspeed_slow_max-1;
         playspeed_current = std::max(playspeed_current-1, playspeed_slow_min);
@@ -975,7 +935,7 @@ int main(int argc, char *argv[])
         printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
         m_Pause = false;
         break;
-      case '2':
+      case SPEED_UP:
         if (playspeed_current < playspeed_slow_min || playspeed_current > playspeed_slow_max)
           playspeed_current = playspeed_slow_max-1;
         playspeed_current = std::min(playspeed_current+1, playspeed_slow_max);
@@ -983,7 +943,7 @@ int main(int argc, char *argv[])
         printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
         m_Pause = false;
         break;
-      case ',': case '<':
+      case REWIND:
         if (playspeed_current >= playspeed_ff_min && playspeed_current <= playspeed_ff_max)
         {
           playspeed_current = playspeed_normal;
@@ -997,7 +957,7 @@ int main(int argc, char *argv[])
         printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
         m_Pause = false;
         break;
-      case '.': case '>':
+      case FFORWARD:
         if (playspeed_current >= playspeed_rew_max && playspeed_current <= playspeed_rew_min)
         {
           playspeed_current = playspeed_normal;
@@ -1011,11 +971,11 @@ int main(int argc, char *argv[])
         printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
         m_Pause = false;
         break;
-      case 'v':
+      case STEP:
         m_av_clock->OMXStep();
         printf("Step\n");
         break;
-      case 'j':
+      case PREV_AUDIO:
         if(m_has_audio)
         {
           int new_index = m_omx_reader.GetAudioIndex() - 1;
@@ -1023,11 +983,11 @@ int main(int argc, char *argv[])
             m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, new_index);
         }
         break;
-      case 'k':
+      case NEXT_AUDIO:
         if(m_has_audio)
           m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, m_omx_reader.GetAudioIndex() + 1);
         break;
-      case 'i':
+      case PREV_CHAPTER:
         if(m_omx_reader.GetChapterCount() > 0)
         {
           m_omx_reader.SeekChapter(m_omx_reader.GetChapter() - 1, &startpts);
@@ -1038,7 +998,7 @@ int main(int argc, char *argv[])
           m_incr = -600.0;
         }
         break;
-      case 'o':
+      case NEXT_CHAPTER:
         if(m_omx_reader.GetChapterCount() > 0)
         {
           m_omx_reader.SeekChapter(m_omx_reader.GetChapter() + 1, &startpts);
@@ -1049,7 +1009,7 @@ int main(int argc, char *argv[])
           m_incr = 600.0;
         }
         break;
-      case 'n':
+      case PREV_SUBTITLE:
         if(m_has_subtitle)
         {
           if(!m_player_subtitles.GetUseExternalSubtitles())
@@ -1070,7 +1030,7 @@ int main(int argc, char *argv[])
           PrintSubtitleInfo();
         }
         break;
-      case 'm':
+      case NEXT_SUBTITLE:
         if(m_has_subtitle)
         {
           if(m_player_subtitles.GetUseExternalSubtitles())
@@ -1092,44 +1052,44 @@ int main(int argc, char *argv[])
           PrintSubtitleInfo();
         }
         break;
-      case 's':
+      case TOGGLE_SUBTITLES:
         if(m_has_subtitle)
         {
           m_player_subtitles.SetVisible(!m_player_subtitles.GetVisible());
           PrintSubtitleInfo();
         }
         break;
-      case 'd':
+      case DEC_SUB_DELAY:
         if(m_has_subtitle && m_player_subtitles.GetVisible())
         {
           m_player_subtitles.SetDelay(m_player_subtitles.GetDelay() - 250);
           PrintSubtitleInfo();
         }
         break;
-      case 'f':
+      case INC_SUB_DELAY:
         if(m_has_subtitle && m_player_subtitles.GetVisible())
         {
           m_player_subtitles.SetDelay(m_player_subtitles.GetDelay() + 250);
           PrintSubtitleInfo();
         }
         break;
-      case 'q': case 27:
+      case QUIT:
         m_stop = true;
         goto do_exit;
         break;
-      case 0x5b44: // key left
+      case SEEK_LEFT_30: // key left
         if(m_omx_reader.CanSeek()) m_incr = -30.0;
         break;
-      case 0x5b43: // key right
+      case SEEK_RIGHT_30: // key right
         if(m_omx_reader.CanSeek()) m_incr = 30.0;
         break;
-      case 0x5b41: // key up
+      case SEEK_RIGHT_600: // key up
         if(m_omx_reader.CanSeek()) m_incr = 600.0;
         break;
-      case 0x5b42: // key down
+      case SEEK_LEFT_600: // key down
         if(m_omx_reader.CanSeek()) m_incr = -600.0;
         break;
-      case ' ': case 'p':
+      case PLAY_PAUSE:
         m_Pause = !m_Pause;
         if (m_av_clock->OMXPlaySpeed() != DVD_PLAYSPEED_NORMAL && m_av_clock->OMXPlaySpeed() != DVD_PLAYSPEED_PAUSE)
         {
@@ -1149,16 +1109,17 @@ int main(int argc, char *argv[])
             m_player_subtitles.Resume();
         }
         break;
-      case '-':
+      case DEC_VOLUME:
         m_player_audio.SetCurrentVolume(m_player_audio.GetCurrentVolume() - 300);
         printf("Current Volume: %.2fdB\n", m_player_audio.GetCurrentVolume() / 100.0f);
         break;
-      case '+': case '=':
+      case INC_VOLUME:
         m_player_audio.SetCurrentVolume(m_player_audio.GetCurrentVolume() + 300);
         printf("Current Volume: %.2fdB\n", m_player_audio.GetCurrentVolume() / 100.0f);
         break;
       default:
         break;
+    }
     }
 
     if(m_seek_flush || m_incr != 0)
@@ -1421,6 +1382,8 @@ do_exit:
   g_OMX.Deinitialize();
   g_RBP.Deinitialize();
 
+
   printf("have a nice day ;)\n");
+
   return 1;
 }
