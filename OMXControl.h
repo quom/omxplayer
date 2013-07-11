@@ -45,7 +45,6 @@ public:
   OMXControl();
   ~OMXControl();
   OMXEvent getEvent();
-  static void getMsg();
   void restore_term();
   bool IsPipe(const std::string& str);
 private:

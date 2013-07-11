@@ -37,10 +37,6 @@
 
 #define CLASSNAME "OMXControl"
 
-void OMXControl::getMsg() {
-  printf("This is a message\n");
-}
-
 OMXControl::OMXControl() {
   // Make getchar unbuffered
   if (isatty(STDIN_FILENO))
