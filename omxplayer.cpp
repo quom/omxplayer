@@ -57,6 +57,7 @@ extern "C" {
 #include "OMXControl.h"
 #include "DllOMX.h"
 #include "Srt.h"
+#include "KeyConfig.h"
 
 #include <string>
 #include <utility>
@@ -166,6 +167,7 @@ void print_usage()
   printf("              --audio_queue n           Size of audio input queue in MB\n");
   printf("              --video_queue n           Size of video input queue in MB\n");
   printf("              --threshold   n           Amount of buffered data required to come out of buffering in seconds\n");
+  printf("              --key-config <file>       Uses key bindings specified in <file> instead of the default\n");
 }
 
 void print_keybindings()
@@ -536,6 +538,7 @@ int main(int argc, char *argv[])
   const int no_deinterlace_opt = 0x10b;
   const int threshold_opt   = 0x10c;
   const int boost_on_downmix_opt = 0x200;
+  const int key_config_opt  = 0x10d;
 
   struct option longopts[] = {
     { "info",         no_argument,        NULL,          'i' },
@@ -570,6 +573,7 @@ int main(int argc, char *argv[])
     { "video_queue",  required_argument,  NULL,          video_queue_opt },
     { "threshold",    required_argument,  NULL,          threshold_opt },
     { "boost-on-downmix", no_argument,    NULL,          boost_on_downmix_opt },
+    { "key-config",   required_argument,  NULL,          key_config_opt },
     { 0, 0, 0, 0 }
   };
 
@@ -579,6 +583,10 @@ int main(int argc, char *argv[])
   int playspeed_current = playspeed_normal;
   int c;
   std::string mode;
+
+  //Build default keymap just in case the --key-config option isn't used
+  map<int,int> keymap = KeyConfig::buildDefaultKeymap();
+
   while ((c = getopt_long(argc, argv, "wihvkn:l:o:cslbpd3:yzt:rg", longopts, NULL)) != -1)
   {
     switch (c) 
@@ -696,6 +704,9 @@ int main(int argc, char *argv[])
         break;
       case 'b':
         m_blank_background = true;
+        break;
+      case key_config_opt:
+        keymap = KeyConfig::parseConfigFile(optarg);
         break;
       case 0:
         break;
@@ -924,11 +935,11 @@ int main(int argc, char *argv[])
      if (!IsPipe(m_filename)) {
     switch(m_omxcontrol.getEvent())
     {
-      case SHOW_INFO:
+      case KeyConfig::ACTION_SHOW_INFO:
         m_tv_show_info = !m_tv_show_info;
         vc_tv_show_info(m_tv_show_info);
         break;
-      case SPEED_DOWN:
+      case KeyConfig::ACTION_DECREASE_SPEED:
         if (playspeed_current < playspeed_slow_min || playspeed_current > playspeed_slow_max)
           playspeed_current = playspeed_slow_max-1;
         playspeed_current = std::max(playspeed_current-1, playspeed_slow_min);
@@ -936,7 +947,7 @@ int main(int argc, char *argv[])
         printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
         m_Pause = false;
         break;
-      case SPEED_UP:
+      case KeyConfig::ACTION_INCREASE_SPEED:
         if (playspeed_current < playspeed_slow_min || playspeed_current > playspeed_slow_max)
           playspeed_current = playspeed_slow_max-1;
         playspeed_current = std::min(playspeed_current+1, playspeed_slow_max);
@@ -944,7 +955,7 @@ int main(int argc, char *argv[])
         printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
         m_Pause = false;
         break;
-      case REWIND:
+      case KeyConfig::ACTION_REWIND:
         if (playspeed_current >= playspeed_ff_min && playspeed_current <= playspeed_ff_max)
         {
           playspeed_current = playspeed_normal;
@@ -958,7 +969,7 @@ int main(int argc, char *argv[])
         printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
         m_Pause = false;
         break;
-      case FFORWARD:
+      case KeyConfig::ACTION_FAST_FORWARD:
         if (playspeed_current >= playspeed_rew_max && playspeed_current <= playspeed_rew_min)
         {
           playspeed_current = playspeed_normal;
@@ -972,11 +983,11 @@ int main(int argc, char *argv[])
         printf("Playspeed %.3f\n", playspeeds[playspeed_current]/1000.0f);
         m_Pause = false;
         break;
-      case STEP:
+      case KeyConfig::ACTION_STEP:
         m_av_clock->OMXStep();
         printf("Step\n");
         break;
-      case PREV_AUDIO:
+      case KeyConfig::ACTION_PREVIOUS_AUDIO:
         if(m_has_audio)
         {
           int new_index = m_omx_reader.GetAudioIndex() - 1;
@@ -984,11 +995,11 @@ int main(int argc, char *argv[])
             m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, new_index);
         }
         break;
-      case NEXT_AUDIO:
+      case KeyConfig::ACTION_NEXT_AUDIO:
         if(m_has_audio)
           m_omx_reader.SetActiveStream(OMXSTREAM_AUDIO, m_omx_reader.GetAudioIndex() + 1);
         break;
-      case PREV_CHAPTER:
+      case KeyConfig::ACTION_PREVIOUS_CHAPTER:
         if(m_omx_reader.GetChapterCount() > 0)
         {
           m_omx_reader.SeekChapter(m_omx_reader.GetChapter() - 1, &startpts);
@@ -999,7 +1010,7 @@ int main(int argc, char *argv[])
           m_incr = -600.0;
         }
         break;
-      case NEXT_CHAPTER:
+      case KeyConfig::ACTION_NEXT_CHAPTER:
         if(m_omx_reader.GetChapterCount() > 0)
         {
           m_omx_reader.SeekChapter(m_omx_reader.GetChapter() + 1, &startpts);
@@ -1010,7 +1021,7 @@ int main(int argc, char *argv[])
           m_incr = 600.0;
         }
         break;
-      case PREV_SUBTITLE:
+      case KeyConfig::ACTION_PREVIOUS_SUBTITLE:
         if(m_has_subtitle)
         {
           if(!m_player_subtitles.GetUseExternalSubtitles())
@@ -1031,7 +1042,7 @@ int main(int argc, char *argv[])
           PrintSubtitleInfo();
         }
         break;
-      case NEXT_SUBTITLE:
+      case KeyConfig::ACTION_NEXT_SUBTITLE:
         if(m_has_subtitle)
         {
           if(m_player_subtitles.GetUseExternalSubtitles())
@@ -1053,44 +1064,44 @@ int main(int argc, char *argv[])
           PrintSubtitleInfo();
         }
         break;
-      case TOGGLE_SUBTITLES:
+      case KeyConfig::ACTION_TOGGLE_SUBTITLE:
         if(m_has_subtitle)
         {
           m_player_subtitles.SetVisible(!m_player_subtitles.GetVisible());
           PrintSubtitleInfo();
         }
         break;
-      case DEC_SUB_DELAY:
+      case KeyConfig::ACTION_DECREASE_SUBTITLE_DELAY:
         if(m_has_subtitle && m_player_subtitles.GetVisible())
         {
           m_player_subtitles.SetDelay(m_player_subtitles.GetDelay() - 250);
           PrintSubtitleInfo();
         }
         break;
-      case INC_SUB_DELAY:
+      case KeyConfig::ACTION_INCREASE_SUBTITLE_DELAY:
         if(m_has_subtitle && m_player_subtitles.GetVisible())
         {
           m_player_subtitles.SetDelay(m_player_subtitles.GetDelay() + 250);
           PrintSubtitleInfo();
         }
         break;
-      case QUIT:
+      case KeyConfig::ACTION_EXIT:
         m_stop = true;
         goto do_exit;
         break;
-      case SEEK_LEFT_30: // key left
+      case KeyConfig::ACTION_SEEK_BACK_SMALL:
         if(m_omx_reader.CanSeek()) m_incr = -30.0;
         break;
-      case SEEK_RIGHT_30: // key right
+      case KeyConfig::ACTION_SEEK_FORWARD_SMALL:
         if(m_omx_reader.CanSeek()) m_incr = 30.0;
         break;
-      case SEEK_RIGHT_600: // key up
+      case KeyConfig::ACTION_SEEK_FORWARD_LARGE:
         if(m_omx_reader.CanSeek()) m_incr = 600.0;
         break;
-      case SEEK_LEFT_600: // key down
+      case KeyConfig::ACTION_SEEK_BACK_LARGE:
         if(m_omx_reader.CanSeek()) m_incr = -600.0;
         break;
-      case PLAY_PAUSE:
+      case KeyConfig::ACTION_PAUSE:
         m_Pause = !m_Pause;
         if (m_av_clock->OMXPlaySpeed() != DVD_PLAYSPEED_NORMAL && m_av_clock->OMXPlaySpeed() != DVD_PLAYSPEED_PAUSE)
         {
@@ -1110,11 +1121,11 @@ int main(int argc, char *argv[])
             m_player_subtitles.Resume();
         }
         break;
-      case DEC_VOLUME:
+      case KeyConfig::ACTION_DECREASE_VOLUME:
         m_player_audio.SetCurrentVolume(m_player_audio.GetCurrentVolume() - 300);
         printf("Current Volume: %.2fdB\n", m_player_audio.GetCurrentVolume() / 100.0f);
         break;
-      case INC_VOLUME:
+      case KeyConfig::ACTION_INCREASE_VOLUME:
         m_player_audio.SetCurrentVolume(m_player_audio.GetCurrentVolume() + 300);
         printf("Current Volume: %.2fdB\n", m_player_audio.GetCurrentVolume() / 100.0f);
         break;
