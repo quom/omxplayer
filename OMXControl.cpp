@@ -25,113 +25,284 @@
 #include <sys/mman.h>
 #include <linux/fb.h>
 #include <sys/ioctl.h>
-#include <getopt.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <dbus/dbus.h>
 
 #include <string>
 #include <utility>
 
+#include "utils/log.h"
 #include "OMXControl.h"
 
 #define CLASSNAME "OMXControl"
 
 OMXControl::OMXControl() {
-  // Make getchar unbuffered
-  if (isatty(STDIN_FILENO))
-    {
-      struct termios new_termios;
-
-      tcgetattr(STDIN_FILENO, &orig_termios);
-
-      new_termios             = orig_termios;
-      new_termios.c_lflag     &= ~(ICANON | ECHO | ECHOCTL | ECHONL);
-      new_termios.c_cflag     |= HUPCL;
-      new_termios.c_cc[VMIN]  = 0;
-
-      tcsetattr(STDIN_FILENO, TCSANOW, &new_termios);
-    }
-    else
-    {
-      orig_fl = fcntl(STDIN_FILENO, F_GETFL);
-      fcntl(STDIN_FILENO, F_SETFL, orig_fl | O_NONBLOCK);
-    }
+	if (dbus_connect() < 0) {
+		CLog::Log(LOGWARNING, "DBus connection failed");
+	} else {
+		CLog::Log(LOGDEBUG, "DBus connection succeeded");
+	}
+    	
 }
 
 OMXControl::~OMXControl() {
-  this->restore_term();
+    dbus_disconnect();
+}
+
+void OMXControl::dispatch() {
+	dbus_connection_read_write_dispatch(bus, 0);
 }
 
 void OMXControl::restore_term() {
-  if (isatty(STDIN_FILENO))
-  {
-    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
-  }
-  else
-  {
-    fcntl(STDIN_FILENO, F_SETFL, orig_fl);
-  }
+	if (isatty(STDIN_FILENO))
+	{
+		tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+	}
+	else
+	{
+		fcntl(STDIN_FILENO, F_SETFL, orig_fl);
+	}
+}
+
+int OMXControl::dbus_connect() {
+	DBusError error;
+
+	dbus_error_init(&error);
+	if (!(bus = dbus_bus_get_private(DBUS_BUS_SYSTEM, &error))) {
+		printf("get bus private: %s\n", error.message);
+		CLog::Log(LOGWARNING, "dbus_bus_get_private(): %s", error.message);
+        goto fail;
+	} else {
+		printf("Got bus\n");
+	}
+
+	dbus_connection_set_exit_on_disconnect(bus, FALSE);
+
+	if (dbus_bus_request_name(
+        bus,
+        OMXPLAYER_DBUS_NAME,
+        DBUS_NAME_FLAG_DO_NOT_QUEUE,
+        &error) != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER) {
+        if (dbus_error_is_set(&error)) {
+            CLog::Log(LOGWARNING, "dbus_bus_request_name(): %s", error.message);
+            goto fail;
+        }
+
+        CLog::Log(LOGWARNING, "Failed to acquire D-Bus name '%s'", OMXPLAYER_DBUS_NAME);
+        goto fail;
+    } else {
+    	printf("Got bus name\n");
+    }
+
+    return 0;
+
+fail:
+    if (dbus_error_is_set(&error))
+        dbus_error_free(&error);
+
+    if (bus) {
+        dbus_connection_close(bus);
+        dbus_connection_unref(bus);
+        bus = NULL;
+    }
+
+    return -1;
+}
+
+void OMXControl::dbus_disconnect() {
+    if (bus) {
+        dbus_connection_close(bus);
+        dbus_connection_unref(bus);
+        bus = NULL;
+    }
+}
+
+DBusHandlerResult OMXControl::msg_server(DBusConnection *c, DBusMessage *m, void *userdata) {
+	DBusError error;
+
+	dbus_error_init(&error);
+
+	CLog::Log(LOGDEBUG, "DBus interface=%s, path=%s, member=%s",
+						dbus_message_get_interface(m),
+						dbus_message_get_path(m),
+						dbus_message_get_member(m));
+
+	printf("DBus interface=%s, path=%s, member=%s\n",
+						dbus_message_get_interface(m),
+						dbus_message_get_path(m),
+						dbus_message_get_member(m));
+
+	if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_ROOT, "Quit")) {
+		printf("Quit method called\n");
+		return OMXControl::dbus_respond_ok(c, m);
+	}
+
+//fail:
+	if (dbus_error_is_set(&error))
+		dbus_error_free(&error);
+
+	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
 OMXEvent OMXControl::getEvent() {
-  int num_keys = 0;
-  int keys[8];
+	dispatch();
 
-  while((keys[num_keys] = getchar()) != EOF) num_keys++;
+	DBusMessage *m = dbus_connection_pop_message(bus);
 
-  if (num_keys > 1) keys[0] = keys[num_keys - 1] | (keys[num_keys - 2] << 8);
-  // Should be enough to uniquely identify multi-byte key presses
+	if (m == NULL) 
+		return BLANK;
 
-  switch (keys[0]) {
-    case 'z':
-      return SHOW_INFO;
-    case '1':
-      return SPEED_DOWN;
-    case '2':
-      return SPEED_UP;
-    case ',': case '<':
-      return REWIND;
-    case '.': case '>':
-      return FFORWARD;
-    case 'v':
-      return STEP;
-    case 'j':
-      return PREV_AUDIO;
-    case 'k':
-      return NEXT_AUDIO;
-    case 'i':
-      return PREV_CHAPTER;
-    case 'o':
-      return NEXT_CHAPTER;
-    case 'n':
-      return PREV_SUBTITLE;
-    case 'm':
-      return NEXT_SUBTITLE;
-    case 's':
-      return TOGGLE_SUBTITLES;
-    case 'd':
-      return DEC_SUB_DELAY;
-    case 'f':
-      return INC_SUB_DELAY;
-    case 'q': case 27:
-      return QUIT;
-    case 0x5b44:
-      return SEEK_LEFT_30;
-    case 0x5b43:
-      return SEEK_RIGHT_30;
-    case 0x5b41:
-      return SEEK_LEFT_600;
-    case 0x5b42:
-      return SEEK_RIGHT_600;
-    case ' ': case 'p':
-      return PLAY_PAUSE;
-    case '-':
-      return DEC_VOLUME;
-    case '+': case '=':
-      return INC_VOLUME;
-    default:
-      return BLANK;
-      break;
-  }
+	if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_ROOT, "Quit")) {
+		OMXControl::dbus_respond_ok(bus, m);
+		return QUIT;
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "CanQuit")) {
+		OMXControl::dbus_respond_boolean(bus, m, 1);
+		return BLANK;
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "Fullscreen")) {
+		OMXControl::dbus_respond_boolean(bus, m, 1);
+		return BLANK;
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "CanSetFullscreen")) {
+		OMXControl::dbus_respond_boolean(bus, m, 0);
+		return BLANK;
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "CanRaise")) {
+		OMXControl::dbus_respond_boolean(bus, m, 0);
+		return BLANK;
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "HasTrackList")) {
+		OMXControl::dbus_respond_boolean(bus, m, 0);
+		return BLANK;
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "Identity")) {
+		OMXControl::dbus_respond_string(bus, m, "OMXPlayer");
+		return BLANK;
+	}
+
+	/*
+	int num_keys = 0;
+	int keys[8];
+
+	while((keys[num_keys] = getchar()) != EOF) num_keys++;
+
+	if (num_keys > 1) keys[0] = keys[num_keys - 1] | (keys[num_keys - 2] << 8);
+	// Should be enough to uniquely identify multi-byte key presses
+
+	switch (keys[0]) {
+		case 'z':
+			return SHOW_INFO;
+		case '1':
+			return SPEED_DOWN;
+		case '2':
+			return SPEED_UP;
+		case ',': case '<':
+			return REWIND;
+		case '.': case '>':
+			return FFORWARD;
+		case 'v':
+			return STEP;
+		case 'j':
+			return PREV_AUDIO;
+		case 'k':
+			return NEXT_AUDIO;
+		case 'i':
+			return PREV_CHAPTER;
+		case 'o':
+			return NEXT_CHAPTER;
+		case 'n':
+			return PREV_SUBTITLE;
+		case 'm':
+			return NEXT_SUBTITLE;
+		case 's':
+			return TOGGLE_SUBTITLES;
+		case 'd':
+			return DEC_SUB_DELAY;
+		case 'f':
+			return INC_SUB_DELAY;
+		case 'q': case 27:
+			return QUIT;
+		case 0x5b44:
+			return SEEK_LEFT_30;
+		case 0x5b43:
+			return SEEK_RIGHT_30;
+		case 0x5b41:
+			return SEEK_LEFT_600;
+		case 0x5b42:
+			return SEEK_RIGHT_600;
+		case ' ': case 'p':
+			return PLAY_PAUSE;
+		case '-':
+			return DEC_VOLUME;
+		case '+': case '=':
+			return INC_VOLUME;
+		default:
+			return BLANK;
+			break;
+	}
+*/
+	return BLANK;
+}
+
+DBusHandlerResult OMXControl::dbus_respond_ok(DBusConnection *c, DBusMessage *m) {
+	DBusMessage *reply;
+
+	reply = dbus_message_new_method_return(m);
+
+	if (!reply) {
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+
+	dbus_connection_send(c, reply, NULL);
+	dbus_message_unref(reply);
+
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+DBusHandlerResult OMXControl::dbus_respond_string(DBusConnection *c, DBusMessage *m, const char *text) {
+	DBusMessage *reply;
+
+	reply = dbus_message_new_method_return(m);
+
+	if (!reply) {
+		CLog::Log(LOGWARNING, "Failed to allocate message");
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+
+	dbus_message_append_args(reply, DBUS_TYPE_STRING, &text, DBUS_TYPE_INVALID);
+	dbus_connection_send(c, reply, NULL);
+	dbus_message_unref(reply);
+
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+DBusHandlerResult OMXControl::dbus_respond_int64(DBusConnection *c, DBusMessage *m, int64_t i) {
+	DBusMessage *reply;
+
+	reply = dbus_message_new_method_return(m);
+
+	if (!reply) {
+		CLog::Log(LOGWARNING, "Failed to allocate message");
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+
+	dbus_message_append_args(reply, DBUS_TYPE_INT64, &i, DBUS_TYPE_INVALID);
+	dbus_connection_send(c, reply, NULL);
+	dbus_message_unref(reply);
+
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+DBusHandlerResult OMXControl::dbus_respond_boolean(DBusConnection *c, DBusMessage *m, int b) {
+	DBusMessage *reply;
+
+	reply = dbus_message_new_method_return(m);
+
+	if (!reply) {
+		CLog::Log(LOGWARNING, "Failed to allocate message");
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+
+	dbus_message_append_args(reply, DBUS_TYPE_BOOLEAN, &b, DBUS_TYPE_INVALID);
+	dbus_connection_send(c, reply, NULL);
+	dbus_message_unref(reply);
+
+	return DBUS_HANDLER_RESULT_HANDLED;
 }

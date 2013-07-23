@@ -20,6 +20,13 @@
 
 //////////////////////////////////////////////////////////////////////
 
+#define OMXPLAYER_DBUS_NAME "org.mpris.MediaPlayer2.omxplayer"
+#define OMXPLAYER_DBUS_PATH_SERVER "/org/mpris/MediaPlayer2"  
+#define OMXPLAYER_DBUS_INTERFACE_ROOT "org.mpris.MediaPlayer2"
+#define OMXPLAYER_DBUS_INTERFACE_PLAYER "org.mpris.MediaPlayer2.Player"
+
+#include <dbus/dbus.h>
+
 enum OMXEvent { 
   SPEED_UP, SPEED_DOWN,
   REWIND, FFORWARD,
@@ -41,15 +48,21 @@ class OMXControl
 protected:
   struct termios orig_termios;
   int orig_fl;
+  DBusConnection *bus;
 public:
   OMXControl();
   ~OMXControl();
   OMXEvent getEvent();
   void restore_term();
   bool IsPipe(const std::string& str);
+  void dispatch();
 private:
-
-
-
+  int dbus_connect();
+  void dbus_disconnect();
+  static DBusHandlerResult msg_server(DBusConnection *c, DBusMessage *m, void *userdata);
+  static DBusHandlerResult dbus_respond_ok(DBusConnection *c, DBusMessage *m);
+  static DBusHandlerResult dbus_respond_int64(DBusConnection *c, DBusMessage *m, int64_t i);
+  static DBusHandlerResult dbus_respond_boolean(DBusConnection *c, DBusMessage *m, int b);
+  static DBusHandlerResult dbus_respond_string(DBusConnection *c, DBusMessage *m, const char *text);
 };
 

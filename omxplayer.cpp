@@ -122,7 +122,7 @@ void sig_handler(int s)
   signal(SIGABRT, SIG_DFL);
   signal(SIGSEGV, SIG_DFL);
   signal(SIGFPE, SIG_DFL);
-  m_omxcontrol.restore_term();
+  //m_omxcontrol.restore_term();
   abort();
 }
 
@@ -917,6 +917,7 @@ int main(int argc, char *argv[])
 
   while(!m_stop)
   {
+
     if(g_abort)
       goto do_exit;
 
