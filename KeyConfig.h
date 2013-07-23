@@ -27,7 +27,8 @@ class KeyConfig{
         ACTION_SEEK_FORWARD_SMALL,
         ACTION_SEEK_BACK_LARGE,
         ACTION_SEEK_FORWARD_LARGE,
-        ACTION_STEP
+        ACTION_STEP,
+        ACTION_BLANK
     };
 
     #define KEY_LEFT 0x5b44

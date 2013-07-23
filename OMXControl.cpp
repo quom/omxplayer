@@ -35,6 +35,7 @@
 
 #include "utils/log.h"
 #include "OMXControl.h"
+#include "KeyConfig.h"
 
 #define CLASSNAME "OMXControl"
 
@@ -146,35 +147,35 @@ DBusHandlerResult OMXControl::msg_server(DBusConnection *c, DBusMessage *m, void
 	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
-OMXEvent OMXControl::getEvent() {
+int OMXControl::getEvent() {
 	dispatch();
 
 	DBusMessage *m = dbus_connection_pop_message(bus);
 
 	if (m == NULL) 
-		return BLANK;
+		return KeyConfig::ACTION_BLANK;
 
 	if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_ROOT, "Quit")) {
 		OMXControl::dbus_respond_ok(bus, m);
-		return QUIT;
+		return KeyConfig::ACTION_EXIT;
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "CanQuit")) {
 		OMXControl::dbus_respond_boolean(bus, m, 1);
-		return BLANK;
+		return KeyConfig::ACTION_BLANK;
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "Fullscreen")) {
 		OMXControl::dbus_respond_boolean(bus, m, 1);
-		return BLANK;
+		return KeyConfig::ACTION_BLANK;
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "CanSetFullscreen")) {
 		OMXControl::dbus_respond_boolean(bus, m, 0);
-		return BLANK;
+		return KeyConfig::ACTION_BLANK;
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "CanRaise")) {
 		OMXControl::dbus_respond_boolean(bus, m, 0);
-		return BLANK;
+		return KeyConfig::ACTION_BLANK;
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "HasTrackList")) {
 		OMXControl::dbus_respond_boolean(bus, m, 0);
-		return BLANK;
+		return KeyConfig::ACTION_BLANK;
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "Identity")) {
 		OMXControl::dbus_respond_string(bus, m, "OMXPlayer");
-		return BLANK;
+		return KeyConfig::ACTION_BLANK;
 	}
 
 	/*
@@ -234,11 +235,11 @@ OMXEvent OMXControl::getEvent() {
 		case '+': case '=':
 			return INC_VOLUME;
 		default:
-			return BLANK;
+			return KeyConfig::ACTION_BLANK;
 			break;
 	}
 */
-	return BLANK;
+	return KeyConfig::ACTION_BLANK;
 }
 
 DBusHandlerResult OMXControl::dbus_respond_ok(DBusConnection *c, DBusMessage *m) {

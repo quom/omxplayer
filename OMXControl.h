@@ -27,22 +27,6 @@
 
 #include <dbus/dbus.h>
 
-enum OMXEvent { 
-  SPEED_UP, SPEED_DOWN,
-  REWIND, FFORWARD,
-  SHOW_INFO, EXIT_OMX,
-  PREV_AUDIO, NEXT_AUDIO,
-  PREV_CHAPTER, NEXT_CHAPTER,
-  PREV_SUBTITLE, NEXT_SUBTITLE,
-  TOGGLE_SUBTITLES,
-  DEC_SUB_DELAY, INC_SUB_DELAY,
-  PLAY_PAUSE, STEP, QUIT,
-  DEC_VOLUME, INC_VOLUME,
-  SEEK_LEFT_30, SEEK_RIGHT_30,
-  SEEK_LEFT_600, SEEK_RIGHT_600,
-  BLANK
-};
-
 class OMXControl
 {
 protected:
@@ -52,7 +36,7 @@ protected:
 public:
   OMXControl();
   ~OMXControl();
-  OMXEvent getEvent();
+  int getEvent();
   void restore_term();
   bool IsPipe(const std::string& str);
   void dispatch();
