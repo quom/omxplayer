@@ -26,6 +26,8 @@
 #define OMXPLAYER_DBUS_INTERFACE_PLAYER "org.mpris.MediaPlayer2.Player"
 
 #include <dbus/dbus.h>
+#include "OMXClock.h"
+#include "OMXPlayerAudio.h"
 
 class OMXControl
 {
@@ -33,9 +35,12 @@ protected:
   struct termios orig_termios;
   int orig_fl;
   DBusConnection *bus;
+  OMXClock       *clock;
+  OMXPlayerAudio *audio;
 public:
   OMXControl();
   ~OMXControl();
+  void init(OMXClock *m_av_clock, OMXPlayerAudio *m_player_audio);
   int getEvent();
   void restore_term();
   bool IsPipe(const std::string& str);
@@ -43,10 +48,10 @@ public:
 private:
   int dbus_connect();
   void dbus_disconnect();
-  static DBusHandlerResult msg_server(DBusConnection *c, DBusMessage *m, void *userdata);
-  static DBusHandlerResult dbus_respond_ok(DBusConnection *c, DBusMessage *m);
-  static DBusHandlerResult dbus_respond_int64(DBusConnection *c, DBusMessage *m, int64_t i);
-  static DBusHandlerResult dbus_respond_boolean(DBusConnection *c, DBusMessage *m, int b);
-  static DBusHandlerResult dbus_respond_string(DBusConnection *c, DBusMessage *m, const char *text);
+  DBusHandlerResult dbus_respond_ok(DBusMessage *m);
+  DBusHandlerResult dbus_respond_int64(DBusMessage *m, int64_t i);
+  DBusHandlerResult dbus_respond_boolean(DBusMessage *m, int b);
+  DBusHandlerResult dbus_respond_string(DBusMessage *m, const char *text);
+  DBusHandlerResult dbus_respond_array(DBusMessage *m, const char *array[], int size);
 };
 

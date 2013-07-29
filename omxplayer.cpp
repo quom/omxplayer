@@ -90,6 +90,7 @@ int               m_audio_index_use     = -1;
 int               m_seek_pos            = 0;
 bool              m_thread_player       = false;
 OMXClock          *m_av_clock           = NULL;
+OMXControl        m_omxcontrol;
 COMXStreamInfo    m_hints_audio;
 COMXStreamInfo    m_hints_video;
 OMXPacket         *m_omx_pkt            = NULL;
@@ -108,7 +109,6 @@ bool              m_has_subtitle        = false;
 float             m_display_aspect      = 0.0f;
 bool              m_boost_on_downmix    = false;
 bool              m_gen_log             = false;
-OMXControl        m_omxcontrol;
 
 enum{ERROR=-1,SUCCESS,ONEBYTE};
 
@@ -793,6 +793,7 @@ int main(int argc, char *argv[])
     printf("Only %dM of gpu_mem is configured. Try running \"sudo raspi-config\" and ensure that \"memory_split\" has a value of %d or greater\n", gpu_mem, min_gpu_mem);
 
   m_av_clock = new OMXClock();
+  m_omxcontrol.init(m_av_clock, &m_player_audio);
 
   m_thread_player = true;
 
