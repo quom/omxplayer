@@ -179,13 +179,19 @@ int OMXControl::getEvent() {
 
 		long offset;
 		dbus_message_get_args(m, &error, DBUS_TYPE_INT64, &offset, DBUS_TYPE_INVALID);
-		if (dbus_error_is_set(&error))
+
+		// Make sure a value is sent for seeking
+		if (dbus_error_is_set(&error)) {
         	dbus_error_free(&error);
-		dbus_respond_ok(m);
-		if (offset < 0) {
-			return KeyConfig::ACTION_SEEK_BACK_SMALL;
-		} else if (offset > 0) {
-			return KeyConfig::ACTION_SEEK_FORWARD_SMALL;
+        	dbus_respond_ok(m);
+        	return KeyConfig::ACTION_BLANK;
+		} else {
+			dbus_respond_int64(m, offset);
+			if (offset < 0) {
+				return KeyConfig::ACTION_SEEK_BACK_SMALL;
+			} else if (offset > 0) {
+				return KeyConfig::ACTION_SEEK_FORWARD_SMALL;
+			}
 		}
 		return KeyConfig::ACTION_BLANK;
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "PlaybackStatus")) {
@@ -199,8 +205,34 @@ int OMXControl::getEvent() {
 		dbus_respond_string(m, status);
 		return KeyConfig::ACTION_BLANK;
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "Volume")) {
-		long volume = audio->GetCurrentVolume(); // Volume in millibels
+		DBusError error;
+		dbus_error_init(&error);
 
+		double vol;
+		dbus_message_get_args(m, &error, DBUS_TYPE_DOUBLE, &vol, DBUS_TYPE_INVALID);
+
+		if (dbus_error_is_set(&error)) { // i.e. Get current volume
+			dbus_error_free(&error);
+			long volume = audio->GetCurrentVolume(); // Volume in millibels
+			double r = pow(10, volume / 2000.0);
+			dbus_respond_double(m, r);
+			return KeyConfig::ACTION_BLANK;
+		} else {
+			long volume = static_cast<long>(2000.0 * log10(vol));
+			audio->SetCurrentVolume(volume);
+			dbus_respond_ok(m);
+			return KeyConfig::ACTION_BLANK;
+		}
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "Time_In_Us")) {
+		long pos = clock->OMXMediaTime();
+		dbus_respond_int64(m, pos);
+		return KeyConfig::ACTION_BLANK;
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "MinimumRate")) {
+		dbus_respond_double(m, 0.0);
+		return KeyConfig::ACTION_BLANK;
+	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "MaximumRate")) {
+		dbus_respond_double(m, 1.125);
+		return KeyConfig::ACTION_BLANK;
 	}
 
 	dbus_respond_ok(m); // Catchall
@@ -250,6 +282,23 @@ DBusHandlerResult OMXControl::dbus_respond_int64(DBusMessage *m, int64_t i) {
 	}
 
 	dbus_message_append_args(reply, DBUS_TYPE_INT64, &i, DBUS_TYPE_INVALID);
+	dbus_connection_send(bus, reply, NULL);
+	dbus_message_unref(reply);
+
+	return DBUS_HANDLER_RESULT_HANDLED;
+}
+
+DBusHandlerResult OMXControl::dbus_respond_double(DBusMessage *m, double d) {
+	DBusMessage *reply;
+
+	reply = dbus_message_new_method_return(m);
+
+	if (!reply) {
+		CLog::Log(LOGWARNING, "Failed to allocate message");
+		return DBUS_HANDLER_RESULT_NEED_MEMORY;
+	}
+
+	dbus_message_append_args(reply, DBUS_TYPE_DOUBLE, &d, DBUS_TYPE_INVALID);
 	dbus_connection_send(bus, reply, NULL);
 	dbus_message_unref(reply);
 

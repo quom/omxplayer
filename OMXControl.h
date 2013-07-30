@@ -50,6 +50,7 @@ private:
   void dbus_disconnect();
   DBusHandlerResult dbus_respond_ok(DBusMessage *m);
   DBusHandlerResult dbus_respond_int64(DBusMessage *m, int64_t i);
+  DBusHandlerResult dbus_respond_double(DBusMessage *m, double d);
   DBusHandlerResult dbus_respond_boolean(DBusMessage *m, int b);
   DBusHandlerResult dbus_respond_string(DBusMessage *m, const char *text);
   DBusHandlerResult dbus_respond_array(DBusMessage *m, const char *array[], int size);
