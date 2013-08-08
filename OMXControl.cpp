@@ -59,16 +59,6 @@ void OMXControl::dispatch() {
 	dbus_connection_read_write_dispatch(bus, 0);
 }
 
-void OMXControl::restore_term() {
-	if (isatty(STDIN_FILENO))
-	{
-		tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
-	}
-	else
-	{
-		fcntl(STDIN_FILENO, F_SETFL, orig_fl);
-	}
-}
 
 int OMXControl::dbus_connect() {
 	DBusError error;
@@ -233,6 +223,23 @@ int OMXControl::getEvent() {
 	} else if (dbus_message_is_method_call(m, DBUS_INTERFACE_PROPERTIES, "MaximumRate")) {
 		dbus_respond_double(m, 1.125);
 		return KeyConfig::ACTION_BLANK;
+
+		// Implement extra OMXPlayer controls
+	} else if (dbus_message_is_method_call(m, OMXPLAYER_DBUS_INTERFACE_PLAYER, "Action")) {
+		DBusError error;
+		dbus_error_init(&error);
+
+		int action;
+		dbus_message_get_args(m, &error, DBUS_TYPE_INT32, &action, DBUS_TYPE_INVALID);
+
+		if (dbus_error_is_set(&error)) {
+			dbus_error_free(&error);
+			dbus_respond_ok(m);
+			return KeyConfig::ACTION_BLANK;
+		} else {
+			dbus_respond_ok(m);
+			return action; // Directly return enum
+		}
 	}
 
 	dbus_respond_ok(m); // Catchall

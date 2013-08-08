@@ -42,8 +42,6 @@ public:
   ~OMXControl();
   void init(OMXClock *m_av_clock, OMXPlayerAudio *m_player_audio);
   int getEvent();
-  void restore_term();
-  bool IsPipe(const std::string& str);
   void dispatch();
 private:
   int dbus_connect();

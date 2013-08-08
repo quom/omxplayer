@@ -58,6 +58,7 @@ extern "C" {
 #include "DllOMX.h"
 #include "Srt.h"
 #include "KeyConfig.h"
+#include "Keyboard.h"
 
 #include <string>
 #include <utility>
@@ -91,6 +92,7 @@ int               m_seek_pos            = 0;
 bool              m_thread_player       = false;
 OMXClock          *m_av_clock           = NULL;
 OMXControl        m_omxcontrol;
+Keyboard          m_keyboard;
 COMXStreamInfo    m_hints_audio;
 COMXStreamInfo    m_hints_video;
 OMXPacket         *m_omx_pkt            = NULL;
@@ -794,6 +796,7 @@ int main(int argc, char *argv[])
 
   m_av_clock = new OMXClock();
   m_omxcontrol.init(m_av_clock, &m_player_audio);
+  m_keyboard.setKeymap(keymap);
 
   m_thread_player = true;
 
@@ -1377,6 +1380,7 @@ do_exit:
   m_player_subtitles.Close();
   m_player_video.Close();
   m_player_audio.Close();
+  m_keyboard.Close();
 
   if(m_omx_pkt)
   {
