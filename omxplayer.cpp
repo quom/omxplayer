@@ -125,7 +125,6 @@ void sig_handler(int s)
   signal(SIGABRT, SIG_DFL);
   signal(SIGSEGV, SIG_DFL);
   signal(SIGFPE, SIG_DFL);
-  //m_omxcontrol.restore_term();
   abort();
 }
 
